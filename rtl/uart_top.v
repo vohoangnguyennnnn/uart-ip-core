@@ -21,93 +21,96 @@
 
 
 module uart_top (
-    input wire clk,
-    input wire rst,
-    input wire [1:0] address,
-    input wire [31:0] write_data,
-    input wire we,
-    output wire tx,
-    input wire rx,
-    input wire re,
-    output reg [7:0] read_data
+    input  wire        clk,
+    input  wire        rst,
+
+    // register interface
+    input  wire [1:0]  address,
+    input  wire [31:0] write_data,
+    input  wire        we,
+    input  wire        re,
+
+    // uart pins
+    output wire        tx,
+    input  wire        rx,
+
+    output reg  [7:0]  read_data
 );
-    
-    // Register Interface
 
-    localparam BAUD_DATA = 0;
-    localparam ENABLE = 1;
-    localparam TX_DATA = 2;
-    localparam RX_DATA = 3;
 
+    localparam BAUD_DATA = 2'd0;
+    localparam ENABLE    = 2'd1;
+    localparam TX_DATA   = 2'd2;
+    localparam RX_DATA   = 2'd3;
+
+
+    // Registers
     reg [31:0] baud_division;
-    reg enable;
-    reg [7:0] data_out;
-    wire [7:0] data_in;
+    reg        enable;
+    reg [7:0]  tx_data;
 
-    always @(*) begin
+    wire [7:0] rx_data;
+    wire       baud_tick;
+
+
+    // WRITE DATA
+    always @(posedge clk) begin
         if (rst) begin
-            baud_division <= 0;
-            enable <= 0;
-            data_out <= 0;
+            baud_division <= 32'd0;
+            enable        <= 1'b0;
+            tx_data       <= 8'd0;
         end
-        else begin
-            casex (address)
-                BAUD_DATA: begin
-                    if (we) begin
-                        baud_division = write_data;
-                    end
-                end
-                ENABLE: begin
-                    if (we) begin
-                        enable = write_data[0];
-                    end
-                end
-                TX_DATA: begin
-                    if (we) begin
-                        data_out = write_data[7:0];
-                    end
-                end
-                RX_DATA: begin
-                    if (re) begin
-                        read_data = data_in;
-                    end
-                end
-                // default: 
+        else if (we) begin
+            case (address)
+                BAUD_DATA: baud_division <= write_data;
+                ENABLE:    enable        <= write_data[0];
+                TX_DATA:   tx_data       <= write_data[7:0];
+                default:   ; 
             endcase
         end
     end
 
-    // Baud Rate Generator
 
-    wire baud_tick;
+    // READ DATA
+    always @(posedge clk) begin
+        if (rst)
+            read_data <= 8'd0;
+        else if (re) begin
+            case (address)
+                RX_DATA: read_data <= rx_data;
+                default: read_data <= 8'd0; // default
+            endcase
+        end
+    end
 
+
+    // Baud generator
     uart_baud_gen baud_gen (
-        .clk (clk),
-        .rst (rst),
+        .clk           (clk),
+        .rst           (rst),
         .baud_division (baud_division),
-        .en (enable),
-        .baud_tick (baud_tick)
+        .en            (enable),
+        .baud_tick     (baud_tick)
     );
 
     // Transmitter
-
     uart_tx tx_core (
-        .clk (clk),
-        .rst (rst),
-        .baud_tick (baud_tick),
-        .ext_data_in (data_out),
-        .en (enable),
-        .tx (tx)
+        .clk         (clk),
+        .rst         (rst),
+        .baud_tick   (baud_tick),
+        .ext_data_in (tx_data),
+        .en          (enable),
+        .tx          (tx)
     );
 
-    // Receiver
-
+    // Receiver 
     uart_rx rx_core (
-        .clk (clk),
-        .rst (rst),
-        .baud_tick (baud_tick),
-        .rx (rx),
-        .ext_data_out (data_in)
+        .clk          (clk),
+        .rst          (rst),
+        .baud_tick    (baud_tick),
+        .rx           (rx),
+        .ext_data_out (rx_data)
     );
-    
+
 endmodule
+
